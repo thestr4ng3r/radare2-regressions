@@ -302,11 +302,11 @@ FILE='../bins/src/hello.c'
 BROKEN=
 ARGS=''
 CMDS='e dir.projects = /tmp/
-e asm.bits=32
+e asm.bits=16
 Ps blah > /dev/null
 Po blah > /dev/null
 e asm.bits'
-EXPECT='32
+EXPECT='16
 '
 
 run_test
