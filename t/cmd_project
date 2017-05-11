@@ -296,3 +296,17 @@ Pl~blah'
 EXPECT=''
 
 run_test
+
+NAME='Save project for a file with asm.bits=32 and check the value after loading again'
+FILE='../bins/src/hello.c'
+BROKEN=
+ARGS=''
+CMDS='e dir.projects = /tmp/
+e asm.bits=32
+Ps blah > /dev/null
+Po blah > /dev/null
+e asm.bits'
+EXPECT='32
+'
+
+run_test
