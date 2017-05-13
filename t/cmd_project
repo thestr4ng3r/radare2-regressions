@@ -34,9 +34,9 @@ wx 31ed4989d15e4889e24883e4f0505449c7c09024410048c7c12024410048c7c7a0284000e857d
 af test
 afF @ fcn.test
 pdf
-Ps testafF > /dev/null
-Pc testafF~afF
-rm /tmp/testafF
+Ps testw > /dev/null
+Pc testw~afF
+rm /tmp/testw
 '
 EXPECT='/ (fcn) fcn.test
 \           0x00000000 (42 byte folded function)
@@ -310,3 +310,17 @@ EXPECT='16
 '
 
 run_test
+
+NAME='prj.name saved in project'
+FILE=malloc://512
+ARGS=
+CMDS='e dir.projects = /tmp/
+Ps named_prj > /dev/null
+e prj.name=
+Po named_prj > /dev/null
+e prj.name
+rm /tmp/named_prj'
+EXPECT='named_prj
+'
+run_test
+
