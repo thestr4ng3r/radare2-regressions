@@ -1,0 +1,106 @@
+#!/bin/sh
+[ -e tests.sh ] && . ./tests.sh || . ../tests.sh
+
+FILE=--
+ARGS=
+
+
+NAME='@ addr'
+CMDS='
+s 0
+s @ 0x42
+'
+EXPECT='0x42
+'
+run_test
+
+
+NAME='@ e:'
+CMDS='
+e scr.color=false
+e scr.color @ e:scr.color=true
+'
+EXPECT='true
+'
+run_test
+
+
+NAME='@ a:'
+CMDS='
+e asm.arch=x86
+e asm.arch @ a:arm
+'
+EXPECT='arm
+'
+run_test
+
+
+NAME='@ e: @ addr'
+CMDS='
+e scr.color=false
+s 0
+e scr.color @ e:scr.color=true @ 0x1337
+s @ e:scr.color=true @ 0x1337
+'
+EXPECT='true
+0x1337
+'
+run_test
+
+
+NAME='@ addr @ e'
+CMDS='
+e scr.color @ 0x42 @ e:scr.color=false 
+e scr.color @ 0x1337 @ e:scr.color=true
+s @ 0x42 @ e:scr.color=false 
+s @ 0x1337 @ e:scr.color=true 
+'
+EXPECT='false
+true
+0x42
+0x1337
+'
+run_test
+
+
+NAME='@ a: @ addr @ e:'
+CMDS='
+e asm.arch @ a:x86 @ 0x42 @ e:scr.color=false
+e asm.arch @ a:arm @ 0x1337 @ e:scr.color=true
+s @ a:x86 @ 0x42 @ e:scr.color=false
+s @ @ a:arm @ 0x1337 @ e:scr.color=true
+e scr.color @ a:x86 @ 0x42 @ e:scr.color=false
+e scr.color @ @ a:arm @ 0x1337 @ e:scr.color=true
+'
+EXPECT='x86
+arm
+0x42
+0x1337
+false
+true
+'
+run_test
+
+
+NAME='@e:a=b,c=d with a==c'
+CMDS='
+e asm.pseudo=false
+e asm.pseudo @ e:asm.pseudo=true,asm.pseudo=true
+e asm.pseudo
+'
+EXPECT='true
+false
+'
+run_test
+
+
+NAME='@e:a=b @e:c=d with a==c'
+CMDS='
+e asm.pseudo=false
+e asm.pseudo @ e:asm.pseudo=true @ e:asm.pseudo=true
+e asm.pseudo
+'
+EXPECT='true
+false
+'
+run_test
