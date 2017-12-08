@@ -1092,6 +1092,35 @@ EXPECT='            0x004004df      mov qword [rbp - 8], str.Hello_World       ;
 '
 run_test
 
+
+# pdJ
+
+NAME='pdJ 1'
+FILE=malloc://128
+ARGS=
+CMDS='wx 90
+e asm.lines=0
+pdJ 1
+'
+EXPECT="[{\"offset\":0,\"text\":\" 0x00000000      90             nop\"}]
+"
+run_test
+
+NAME='pdJ comments'
+FILE=malloc://128
+ARGS=
+CMDS='wx 90
+e asm.lines=0
+CCu base64:dGVzdAo=
+pdJ 1
+CCu base64:dGVzdCAid2l0aCBxdW90ZXMiCg==
+pdJ 1'
+EXPECT="[{\"offset\":0,\"text\":\" 0x00000000      90             nop               ; test\"}]
+[{\"offset\":0,\"text\":\" 0x00000000      90             nop               ; test \\\"with quotes\\\"\"}]
+"
+run_test
+
+
 NAME='pd0~{} - crash'
 FILE='-'
 CMDS='pd0~{}'
