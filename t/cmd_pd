@@ -1095,15 +1095,15 @@ run_test
 
 # pdJ
 
-NAME='pdJ 1'
+NAME='pdJ 2'
 FILE=malloc://128
 ARGS=
-CMDS='wx 90
+CMDS='wx 9090
 e asm.lines=0
-pdJ 1
+pdJ 2
 '
-EXPECT="[{\"offset\":0,\"text\":\" 0x00000000      90             nop\"}]
-"
+EXPECT='[{"offset":0,"text":" 0x00000000      90             nop"},{"offset":1,"text":" 0x00000001      90             nop"}]
+'
 run_test
 
 NAME='pdJ comments'
@@ -1114,10 +1114,38 @@ e asm.lines=0
 CCu base64:dGVzdAo=
 pdJ 1
 CCu base64:dGVzdCAid2l0aCBxdW90ZXMiCg==
+pdJ 1
+e asm.cmtright=false
 pdJ 1'
-EXPECT="[{\"offset\":0,\"text\":\" 0x00000000      90             nop               ; test\"}]
-[{\"offset\":0,\"text\":\" 0x00000000      90             nop               ; test \\\"with quotes\\\"\"}]
-"
+EXPECT='[{"offset":0,"text":" 0x00000000      90             nop               ; test"}]
+[{"offset":0,"text":" 0x00000000      90             nop               ; test \"with quotes\""}]
+[{"offset":0,"text":"     ; test \"with quotes\"\n"},{"offset":0,"text":" 0x00000000      90             nop"}]
+'
+run_test
+
+NAME='pdJ string comment'
+FILE=../bins/elf/analysis/main
+ARGS=
+CMDS='
+aa
+pdJ 1 @ 0x0040050a
+'
+EXPECT='[{"offset":4195594,"text":"|           0x0040050a      bfc4054000     mov edi, str.Hello_World ; 0x4005c4 ; \"Hello World\""}]
+'
+run_test
+
+NAME='pdJ flags'
+FILE=../bins/elf/analysis/main
+ARGS=
+CMDS='
+s main
+pdJ 1 @ 0x00400506
+aa
+pdJ 1 @ 0x00400506
+'
+EXPECT='[{"offset":4195590,"text":"            ;-- main:"},{"offset":4195590,"text":"            ;-- main:"},{"offset":4195590,"text":"            0x00400506      55             push rbp"}]
+[{"offset":4195590,"text":"            ;-- main:"},{"offset":4195590,"text":"/ (fcn) sym.main 16"},{"offset":4195590,"text":"|   sym.main ();"},{"offset":4195590,"text":"|              ; DATA XREF from 0x0040042d (entry0)"},{"offset":4195590,"text":"|           0x00400506      55             push rbp"}]
+'
 run_test
 
 
