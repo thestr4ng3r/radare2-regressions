@@ -1148,6 +1148,18 @@ EXPECT='[{"offset":4195590,"text":"            ;-- main:"},{"offset":4195590,"te
 '
 run_test
 
+NAME='pdJ string'
+FILE=malloc://128
+ARGS=
+CMDS='
+w Snoo"ping as" usual,\n\\I see...
+Cs 30
+pdJ 1
+'
+EXPECT='[{"offset":0,"text":"            0x00000000     .string \"Snoo\\\"ping as\\\" usual,\\n\\\\I see...\" ; len=30"}]
+'
+run_test
+
 
 NAME='pd0~{} - crash'
 FILE='-'
