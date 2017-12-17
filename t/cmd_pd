@@ -1148,6 +1148,17 @@ EXPECT='[{"offset":4195590,"text":"            ;-- main:"},{"offset":4195590,"te
 '
 run_test
 
+NAME="pdJ midflags reloc"
+FILE=malloc://8
+ARGS=
+CMDS='
+f reloc.test @ 0x1
+pdJ 1 @ 0x0
+'
+EXPECT='[{"offset":0,"text":"(reloc.test)"},{"offset":0,"text":"            0x00000000      0000           add byte [rax], al"}]
+'
+run_test
+
 NAME='pdJ string'
 FILE=malloc://128
 ARGS=
