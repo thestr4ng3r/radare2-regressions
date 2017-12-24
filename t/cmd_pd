@@ -406,6 +406,16 @@ EXPECT='[{"offset":4195590,"esil":"rbp,8,rsp,-=,rsp,=[8]","refptr":false,"fcn_ad
 '
 run_test
 
+NAME='pdj str in opcode'
+FILE=../bins/java/Hello.class
+CMDS='
+pdj 1 @ 0x000002ae
+'
+EXPECT='[{"offset":686,"ptr":0,"val":0,"esil":"","refptr":false,"fcn_addr":0,"fcn_last":0,"size":2,"opcode":"ldc \"World\"","disasm":"ldc \"World\"","bytes":"120b","family":"cpu","type":"push","type_num":13,"type2_num":2138640,"jump":0,"fail":0}]
+
+'
+run_test
+
 NAME='pdfline'
 FILE=malloc://1024
 BROKEN=
@@ -1168,6 +1178,15 @@ Cs 30
 pdJ 1
 '
 EXPECT='[{"offset":0,"text":"            0x00000000     .string \"Snoo\\\"ping as\\\" usual,\\n\\\\I see...\" ; len=30"}]
+'
+run_test
+
+NAME='pdJ str in opcode'
+FILE=../bins/java/Hello.class
+CMDS='
+pdJ 1 @ 0x000002ae
+'
+EXPECT='[{"offset":686,"text":"            0x000002ae      120b           ldc \"World\""}]
 '
 run_test
 
