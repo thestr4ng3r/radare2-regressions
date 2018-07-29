@@ -2,7 +2,21 @@
 #include <r_vector.h>
 #include "minunit.h"
 
-bool test_r_vector() {
+// allocates a vector of len uint32_t values from 0 to len
+// with capacity len + padding
+static void init_test_vector(RVector *v, size_t len, size_t padding) {
+	v->a = malloc ((len + padding) * 4);
+	v->len = len;
+	v->capacity = len + padding;
+	v->elem_size = 4;
+
+	uint32_t i;
+	for (i = 0; i < len; i++) {
+		((uint32_t *)v->a)[i] = i;
+	}
+}
+
+static bool test_r_vector() {
 	ptrdiff_t i;
 	void **it;
 	void *val;
@@ -93,12 +107,170 @@ bool test_r_vector() {
 		r_pvector_clear (&s, free);
 	}
 
-	//return 0;
 	mu_end;
 }
 
-int all_tests() {
-	mu_run_test(test_r_vector);
+
+static bool test_vector_init() {
+	RVector v;
+	r_vector_init (&v, 42);
+	mu_assert_eq_fmt (v.elem_size, 42UL, "init elem_size", "%lu");
+	mu_assert_eq_fmt (v.len, 0UL, "init len", "%lu");
+	mu_end;
+}
+
+static bool test_vector_new() {
+	RVector *v = r_vector_new (42);
+	mu_assert ("new", v);
+	mu_assert_eq_fmt (v->elem_size, 42UL, "new elem_size", "%lu");
+	mu_assert_eq_fmt (v->len, 0UL, "new len", "%lu");
+	r_vector_free (v, NULL, NULL);
+	mu_end;
+}
+
+#define FREE_TEST_COUNT 10
+
+static void elem_free_test(void *e, void *user) {
+	uint8_t e_val = *((uint8_t *)e);
+	int *acc = (int *)user;
+	if (e_val < 0 || e_val > FREE_TEST_COUNT) {
+		e_val = FREE_TEST_COUNT;
+	}
+	acc[e_val]++;
+}
+
+static bool test_vector_free() {
+	RVector *v = r_vector_new (1);
+
+	uint8_t i;
+	for (i=0; i<FREE_TEST_COUNT; i++) {
+		r_vector_push (v, &i);
+	}
+
+	int acc[FREE_TEST_COUNT+1] = {0};
+	r_vector_free (v, elem_free_test, acc);
+
+	// elem_free_test does acc[i]++ for element value i
+	// => acc[0] through acc[FREE_TEST_COUNT-1] == 1
+	// acc[FREE_TEST_COUNT] is for potentially invalid calls of elem_free_test
+
+	for (i=0; i<FREE_TEST_COUNT; i++) {
+		mu_assert_eq (acc[i], 1, "free individual elements");
+	}
+
+	mu_assert_eq (acc[FREE_TEST_COUNT], 0, "invalid free calls");
+	mu_end;
+}
+
+static bool test_vector_empty() {
+	RVector v;
+	r_vector_init (&v, 1);
+	bool empty = r_vector_empty (&v);
+	mu_assert_eq (empty, true, "r_vector_init => r_vector_empty");
+	uint8_t e = 0;
+	r_vector_push (&v, &e);
+	empty = r_vector_empty (&v);
+	mu_assert_eq (empty, false, "r_vector_push => !r_vector_empty");
+	r_vector_pop (&v, &e);
+	empty = r_vector_empty (&v);
+	mu_assert_eq (empty, true, "r_vector_pop => r_vector_empty");
+	r_vector_clear (&v, NULL, NULL);
+
+	RVector *vp = r_vector_new (42);
+	empty = r_vector_empty (&v);
+	mu_assert_eq (empty, true, "r_vector_new => r_vector_empty");
+	r_vector_free (vp, NULL, NULL);
+
+	mu_end;
+}
+
+static bool test_vector_push() {
+	RVector v;
+	r_vector_init (&v, 4);
+
+	uint32_t e = 1337;
+	e = *((uint32_t *)r_vector_push (&v, &e));
+	mu_assert_eq_fmt (v.len, 1UL, "r_vector_push (empty) => len == 1", "%lu");
+	mu_assert_eq (e, 1337, "r_vector_push (empty) => content at returned ptr");
+	e = *((uint32_t *)r_vector_index_ptr (&v, 0));
+	mu_assert_eq (e, 1337, "r_vector_push (empty) => content");
+
+	e = 0xDEAD;
+	e = *((uint32_t *)r_vector_push (&v, &e));
+	mu_assert_eq_fmt (v.len, 2UL, "r_vector_push => len == 2", "%lu");
+	mu_assert_eq (e, 0xDEAD, "r_vector_push (empty) => content at returned ptr");
+	e = *((uint32_t *)r_vector_index_ptr (&v, 0));
+	mu_assert_eq (e, 1337, "r_vector_push => old content");
+	e = *((uint32_t *)r_vector_index_ptr (&v, 1));
+	mu_assert_eq (e, 0xDEAD, "r_vector_push => content");
+
+	e = 0xBEEF;
+	e = *((uint32_t *)r_vector_push (&v, &e));
+	mu_assert_eq_fmt (v.len, 3UL, "r_vector_push => len == 3", "%lu");
+	mu_assert_eq (e, 0xBEEF, "r_vector_push (empty) => content at returned ptr");
+	e = *((uint32_t *)r_vector_index_ptr (&v, 0));
+	mu_assert_eq (e, 1337, "r_vector_push => old content");
+	e = *((uint32_t *)r_vector_index_ptr (&v, 1));
+	mu_assert_eq (e, 0xDEAD, "r_vector_push => old content");
+	e = *((uint32_t *)r_vector_index_ptr (&v, 2));
+	mu_assert_eq (e, 0xBEEF, "r_vector_push => content");
+
+	r_vector_clear (&v, NULL, NULL);
+
+
+	init_test_vector (&v, 5, 0);
+	e = 1337;
+	e = *((uint32_t *)r_vector_push (&v, &e));
+	mu_assert ("r_vector_push (resize) => capacity", v.capacity >= 6);
+	mu_assert_eq_fmt (v.len, 6UL, "r_vector_push (resize) => len", "%lu");
+	mu_assert_eq (e, 1337, "r_vector_push (empty) => content at returned ptr");
+
+	size_t i;
+	for (i = 0; i < v.len - 1; i++) {
+		e = *((uint32_t *)r_vector_index_ptr (&v, i));
+		mu_assert_eq (e, (uint32_t)i, "r_vector_push (resize) => old content");
+	}
+	e = *((uint32_t *)r_vector_index_ptr (&v, 5));
+	mu_assert_eq (e, 1337, "r_vector_push (resize) => content");
+
+	mu_end;
+}
+
+static bool test_vector_delete_at() {
+	RVector v;
+	init_test_vector (&v, 5, 0);
+
+	uint32_t e;
+	r_vector_delete_at (&v, 2, &e);
+	mu_assert_eq (e, 2, "r_vector_delete_at => into");
+	mu_assert_eq_fmt (v.len, 4UL, "r_vector_delete_at => len", "%lu");
+
+	mu_assert_eq (((uint32_t *)v.a)[0], 0, "r_vector_delete_at => remaining elements");
+	mu_assert_eq (((uint32_t *)v.a)[1], 1, "r_vector_delete_at => remaining elements");
+	mu_assert_eq (((uint32_t *)v.a)[2], 3, "r_vector_delete_at => remaining elements");
+	mu_assert_eq (((uint32_t *)v.a)[3], 4, "r_vector_delete_at => remaining elements");
+
+	r_vector_delete_at (&v, 3, &e);
+	mu_assert_eq (e, 4, "r_vector_delete_at (end) => into");
+	mu_assert_eq_fmt (v.len, 3UL, "r_vector_delete_at (end) => len", "%lu");
+
+	mu_assert_eq (((uint32_t *)v.a)[0], 0, "r_vector_delete_at (end) => remaining elements");
+	mu_assert_eq (((uint32_t *)v.a)[1], 1, "r_vector_delete_at (end) => remaining elements");
+	mu_assert_eq (((uint32_t *)v.a)[2], 3, "r_vector_delete_at (end) => remaining elements");
+
+	r_vector_clear (&v, NULL, NULL);
+
+	mu_end;
+}
+
+static int all_tests() {
+	mu_run_test (test_r_vector);
+	mu_run_test (test_vector_init);
+	mu_run_test (test_vector_new);
+	mu_run_test (test_vector_push);
+	mu_run_test (test_vector_empty);
+	mu_run_test (test_vector_free);
+	mu_run_test (test_vector_delete_at);
 	return tests_passed != tests_run;
 }
 
