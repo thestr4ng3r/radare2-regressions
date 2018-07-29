@@ -16,7 +16,7 @@ static void init_test_vector(RVector *v, size_t len, size_t padding) {
 	}
 }
 
-static bool test_r_vector() {
+static bool test_r_vector_old() {
 	ptrdiff_t i;
 	void **it;
 	void *val;
@@ -116,6 +116,8 @@ static bool test_vector_init() {
 	r_vector_init (&v, 42);
 	mu_assert_eq_fmt (v.elem_size, 42UL, "init elem_size", "%lu");
 	mu_assert_eq_fmt (v.len, 0UL, "init len", "%lu");
+	mu_assert_eq_fmt (v.a, NULL, "init a", "%p");
+	mu_assert_eq_fmt (v.capacity, 0UL, "init capacity", "%lu");
 	mu_end;
 }
 
@@ -124,14 +126,16 @@ static bool test_vector_new() {
 	mu_assert ("new", v);
 	mu_assert_eq_fmt (v->elem_size, 42UL, "new elem_size", "%lu");
 	mu_assert_eq_fmt (v->len, 0UL, "new len", "%lu");
-	r_vector_free (v, NULL, NULL);
+	mu_assert_eq_fmt (v->a, NULL, "new a", "%p");
+	mu_assert_eq_fmt (v->capacity, 0UL, "new capacity", "%lu");
+	free (v);
 	mu_end;
 }
 
 #define FREE_TEST_COUNT 10
 
 static void elem_free_test(void *e, void *user) {
-	uint8_t e_val = *((uint8_t *)e);
+	uint32_t e_val = *((uint32_t *)e);
 	int *acc = (int *)user;
 	if (e_val < 0 || e_val > FREE_TEST_COUNT) {
 		e_val = FREE_TEST_COUNT;
@@ -140,12 +144,8 @@ static void elem_free_test(void *e, void *user) {
 }
 
 static bool test_vector_free() {
-	RVector *v = r_vector_new (1);
-
-	uint8_t i;
-	for (i=0; i<FREE_TEST_COUNT; i++) {
-		r_vector_push (v, &i);
-	}
+	RVector *v = r_vector_new (4);
+	init_test_vector (v, FREE_TEST_COUNT, 0);
 
 	int acc[FREE_TEST_COUNT+1] = {0};
 	r_vector_free (v, elem_free_test, acc);
@@ -154,11 +154,63 @@ static bool test_vector_free() {
 	// => acc[0] through acc[FREE_TEST_COUNT-1] == 1
 	// acc[FREE_TEST_COUNT] is for potentially invalid calls of elem_free_test
 
+	uint32_t i;
 	for (i=0; i<FREE_TEST_COUNT; i++) {
 		mu_assert_eq (acc[i], 1, "free individual elements");
 	}
 
 	mu_assert_eq (acc[FREE_TEST_COUNT], 0, "invalid free calls");
+	mu_end;
+}
+
+static bool test_vector_clear() {
+	RVector v;
+	init_test_vector (&v, FREE_TEST_COUNT, 0);
+
+	int acc[FREE_TEST_COUNT+1] = {0};
+	r_vector_clear (&v, elem_free_test, acc);
+
+	// see test_vector_free
+
+	uint32_t i;
+	for (i = 0; i < FREE_TEST_COUNT; i++) {
+		mu_assert_eq (acc[i], 1, "free individual elements");
+	}
+
+	mu_assert_eq (acc[FREE_TEST_COUNT], 0, "invalid free calls");
+	mu_end;
+}
+
+static bool test_vector_clone() {
+	RVector v;
+	init_test_vector (&v, 5, 0);
+	RVector *v1 = r_vector_clone (&v);
+	r_vector_clear (&v, NULL, NULL);
+	mu_assert ("r_vector_clone", v1);
+	mu_assert_eq_fmt (v1->len, 5UL, "r_vector_clone => len", "%lu");
+	mu_assert_eq_fmt (v1->capacity, 5UL, "r_vector_clone => capacity", "%lu");
+	uint32_t i;
+	for (i = 0; i < 5; i++) {
+		mu_assert_eq (*((uint32_t *)r_vector_index_ptr (v1, i)), i, "r_vector_clone => content");
+	}
+	r_vector_free (v1, NULL, NULL);
+
+
+	init_test_vector (&v, 5, 5);
+	v1 = r_vector_clone (&v);
+	r_vector_clear (&v, NULL, NULL);
+	mu_assert ("r_vector_clone (+capacity)", v1);
+	mu_assert_eq_fmt (v1->len, 5UL, "r_vector_clone (+capacity) => len", "%lu");
+	mu_assert_eq_fmt (v1->capacity, 10UL, "r_vector_clone (+capacity) => capacity", "%lu");
+	for (i = 0; i < 5; i++) {
+		mu_assert_eq (*((uint32_t *)r_vector_index_ptr (v1, i)), i, "r_vector_clone => content");
+	}
+	// write over whole capacity to trigger potential errors with valgrind or asan
+	for (i = 0; i < 10; i++) {
+		*((uint32_t *)r_vector_index_ptr (v1, i)) = 1337;
+	}
+	r_vector_free (v1, NULL, NULL);
+
 	mu_end;
 }
 
@@ -180,6 +232,191 @@ static bool test_vector_empty() {
 	empty = r_vector_empty (&v);
 	mu_assert_eq (empty, true, "r_vector_new => r_vector_empty");
 	r_vector_free (vp, NULL, NULL);
+
+	mu_end;
+}
+
+static bool test_vector_delete_at() {
+	RVector v;
+	init_test_vector (&v, 5, 0);
+
+	uint32_t e;
+	r_vector_delete_at (&v, 2, &e);
+	mu_assert_eq (e, 2, "r_vector_delete_at => into");
+	mu_assert_eq_fmt (v.len, 4UL, "r_vector_delete_at => len", "%lu");
+
+	mu_assert_eq (((uint32_t *)v.a)[0], 0, "r_vector_delete_at => remaining elements");
+	mu_assert_eq (((uint32_t *)v.a)[1], 1, "r_vector_delete_at => remaining elements");
+	mu_assert_eq (((uint32_t *)v.a)[2], 3, "r_vector_delete_at => remaining elements");
+	mu_assert_eq (((uint32_t *)v.a)[3], 4, "r_vector_delete_at => remaining elements");
+
+	r_vector_delete_at (&v, 3, &e);
+	mu_assert_eq (e, 4, "r_vector_delete_at (end) => into");
+	mu_assert_eq_fmt (v.len, 3UL, "r_vector_delete_at (end) => len", "%lu");
+
+	mu_assert_eq (((uint32_t *)v.a)[0], 0, "r_vector_delete_at (end) => remaining elements");
+	mu_assert_eq (((uint32_t *)v.a)[1], 1, "r_vector_delete_at (end) => remaining elements");
+	mu_assert_eq (((uint32_t *)v.a)[2], 3, "r_vector_delete_at (end) => remaining elements");
+
+	r_vector_clear (&v, NULL, NULL);
+
+	mu_end;
+}
+
+static bool test_vector_insert() {
+	RVector v;
+
+	init_test_vector (&v, 4, 2);
+	uint32_t e = 1337;
+	e = *((uint32_t *)r_vector_insert (&v, 1, &e));
+	mu_assert_eq_fmt (v.len, 5UL, "r_vector_insert => len", "%lu");
+	mu_assert_eq (e, 1337, "r_vector_insert => content at returned ptr");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 0)), 0, "r_vector_insert => old content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 1)), 1337, "r_vector_insert => content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 2)), 1, "r_vector_insert => old content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 3)), 2, "r_vector_insert => old content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 4)), 3, "r_vector_insert => old content");
+	r_vector_clear (&v, NULL, NULL);
+
+	init_test_vector (&v, 4, 0);
+	e = 1337;
+	e = *((uint32_t *)r_vector_insert (&v, 1, &e));
+	mu_assert ("r_vector_insert (resize) => capacity", v.capacity >= 5);
+	mu_assert_eq_fmt (v.len, 5UL, "r_vector_insert => len", "%lu");
+	mu_assert_eq (e, 1337, "r_vector_insert => content at returned ptr");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 0)), 0, "r_vector_insert (resize) => old content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 1)), 1337, "r_vector_insert (resize) => content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 2)), 1, "r_vector_insert (resize) => old content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 3)), 2, "r_vector_insert (resize) => old content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 4)), 3, "r_vector_insert (resize) => old content");
+	r_vector_clear (&v, NULL, NULL);
+
+	init_test_vector (&v, 4, 2);
+	e = 1337;
+	e = *((uint32_t *)r_vector_insert (&v, 4, &e));
+	mu_assert_eq_fmt (v.len, 5UL, "r_vector_insert (end) => len", "%lu");
+	mu_assert_eq (e, 1337, "r_vector_insert (end) => content at returned ptr");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 0)), 0, "r_vector_insert (end) => old content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 1)), 1, "r_vector_insert (end) => old content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 2)), 2, "r_vector_insert (end) => old content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 3)), 3, "r_vector_insert (end) => old content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 4)), 1337, "r_vector_insert (end) => content");
+	r_vector_clear (&v, NULL, NULL);
+
+	init_test_vector (&v, 4, 0);
+	e = 1337;
+	e = *((uint32_t *)r_vector_insert (&v, 4, &e));
+	mu_assert ("r_vector_insert (resize) => capacity", v.capacity >= 5);
+	mu_assert_eq_fmt (v.len, 5UL, "r_vector_insert (end) => len", "%lu");
+	mu_assert_eq (e, 1337, "r_vector_insert (end) => content at returned ptr");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 0)), 0, "r_vector_insert (end, resize) => old content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 1)), 1, "r_vector_insert (end, resize) => old content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 2)), 2, "r_vector_insert (end, resize) => old content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 3)), 3, "r_vector_insert (end, resize) => old content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 4)), 1337, "r_vector_insert (end, resize) => content");
+	r_vector_clear (&v, NULL, NULL);
+
+	mu_end;
+}
+
+static bool test_vector_insert_range() {
+	RVector v;
+	uint32_t range[] = { 0xC0, 0xFF, 0xEE };
+
+	r_vector_init (&v, 4);
+	uint32_t *p = (uint32_t *)r_vector_insert_range (&v, 0, range, 3);
+	mu_assert_eq_fmt (p, r_vector_index_ptr (&v, 0), "r_vector_insert_range (empty) returned ptr", "%p");
+	mu_assert_eq_fmt (v.len, 3UL, "r_vector_insert_range (empty) => len", "%lu");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 0)), 0xC0, "r_vector_insert_range (empty) => new content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 1)), 0xFF, "r_vector_insert_range (empty) => new content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 2)), 0xEE, "r_vector_insert_range (empty) => new content");
+	r_vector_clear (&v, NULL, NULL);
+
+	init_test_vector (&v, 3, 3);
+	p = (uint32_t *)r_vector_insert_range (&v, 2, range, 3);
+	mu_assert_eq_fmt (p, r_vector_index_ptr (&v, 2), "r_vector_insert_range returned ptr", "%p");
+	mu_assert_eq_fmt (v.len, 6UL, "r_vector_insert_range => len", "%lu");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 0)), 0, "r_vector_insert_range => old content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 1)), 1, "r_vector_insert_range => old content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 2)), 0xC0, "r_vector_insert_range => new content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 3)), 0xFF, "r_vector_insert_range => new content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 4)), 0xEE, "r_vector_insert_range => new content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 5)), 2, "r_vector_insert_range => old content");
+	r_vector_clear (&v, NULL, NULL);
+
+	init_test_vector (&v, 3, 3);
+	p = (uint32_t *)r_vector_insert_range (&v, 3, range, 3);
+	mu_assert_eq_fmt (p, r_vector_index_ptr (&v, 3), "r_vector_insert_range (end) returned ptr", "%p");
+	mu_assert_eq_fmt (v.len, 6UL, "r_vector_insert_range (end) => len", "%lu");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 0)), 0, "r_vector_insert_range (end) => old content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 1)), 1, "r_vector_insert_range (end) => old content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 2)), 2, "r_vector_insert_range (end) => old content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 3)), 0xC0, "r_vector_insert_range (end) => new content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 4)), 0xFF, "r_vector_insert_range (end) => new content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 5)), 0xEE, "r_vector_insert_range (end) => new content");
+	r_vector_clear (&v, NULL, NULL);
+
+	init_test_vector (&v, 3, 0);
+	p = (uint32_t *)r_vector_insert_range (&v, 2, range, 3);
+	mu_assert_eq_fmt (p, r_vector_index_ptr (&v, 2), "r_vector_insert_range (resize) returned ptr", "%p");
+	mu_assert_eq_fmt (v.len, 6UL, "r_vector_insert_range (resize) => len", "%lu");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 0)), 0, "r_vector_insert_range (resize) => old content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 1)), 1, "r_vector_insert_range (resize) => old content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 2)), 0xC0, "r_vector_insert_range (resize) => new content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 3)), 0xFF, "r_vector_insert_range (resize) => new content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 4)), 0xEE, "r_vector_insert_range (resize) => new content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 5)), 2, "r_vector_insert_range (resize) => old content");
+	r_vector_clear (&v, NULL, NULL);
+
+	mu_end;
+}
+
+static bool test_vector_pop() {
+	RVector v;
+	init_test_vector (&v, 3, 0);
+
+	uint32_t e;
+	r_vector_pop (&v, &e);
+	mu_assert_eq (e, 2, "r_vector_pop into");
+	mu_assert_eq_fmt (v.len, 2UL, "r_vector_pop => len", "%lu");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 0)), 0, "r_vector_pop => remaining content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 1)), 1, "r_vector_pop => remaining content");
+
+	r_vector_pop (&v, &e);
+	mu_assert_eq (e, 1, "r_vector_pop into");
+	mu_assert_eq_fmt (v.len, 1UL, "r_vector_pop => len", "%lu");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 0)), 0, "r_vector_pop => remaining content");
+
+	r_vector_pop (&v, &e);
+	mu_assert_eq (e, 0, "r_vector_pop (last) into");
+	mu_assert_eq_fmt (v.len, 0UL, "r_vector_pop (last) => len", "%lu");
+
+	r_vector_clear (&v, NULL, NULL);
+
+	mu_end;
+}
+
+static bool test_vector_pop_front() {
+	RVector v;
+	init_test_vector (&v, 3, 0);
+
+	uint32_t e;
+	r_vector_pop_front (&v, &e);
+	mu_assert_eq (e, 0, "r_vector_pop_front into");
+	mu_assert_eq_fmt (v.len, 2UL, "r_vector_pop_front => len", "%lu");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 0)), 1, "r_vector_pop_front => remaining content");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 1)), 2, "r_vector_pop_front => remaining content");
+
+	r_vector_pop_front (&v, &e);
+	mu_assert_eq (e, 1, "r_vector_pop_front into");
+	mu_assert_eq_fmt (v.len, 1UL, "r_vector_pop_front => len", "%lu");
+	mu_assert_eq (*((uint32_t *)r_vector_index_ptr (&v, 0)), 2, "r_vector_pop_front => remaining content");
+
+	r_vector_pop_front (&v, &e);
+	mu_assert_eq (e, 2, "r_vector_pop_front (last) into");
+	mu_assert_eq_fmt (v.len, 0UL, "r_vector_pop_front (last) => len", "%lu");
+
+	r_vector_clear (&v, NULL, NULL);
 
 	mu_end;
 }
@@ -233,44 +470,125 @@ static bool test_vector_push() {
 	e = *((uint32_t *)r_vector_index_ptr (&v, 5));
 	mu_assert_eq (e, 1337, "r_vector_push (resize) => content");
 
+	r_vector_clear (&v, NULL, NULL);
+
 	mu_end;
 }
 
-static bool test_vector_delete_at() {
+static bool test_vector_push_front() {
 	RVector v;
+	r_vector_init (&v, 4);
+
+	uint32_t e = 1337;
+	e = *((uint32_t *)r_vector_push_front (&v, &e));
+	mu_assert_eq_fmt (v.len, 1UL, "r_vector_push_front (empty) => len == 1", "%lu");
+	mu_assert_eq (e, 1337, "r_vector_push_front (empty) => content at returned ptr");
+	e = *((uint32_t *)r_vector_index_ptr (&v, 0));
+	mu_assert_eq (e, 1337, "r_vector_push (empty) => content");
+
+	e = 0xDEAD;
+	e = *((uint32_t *)r_vector_push_front (&v, &e));
+	mu_assert_eq_fmt (v.len, 2UL, "r_vector_push_front => len == 2", "%lu");
+	mu_assert_eq (e, 0xDEAD, "r_vector_push_front (empty) => content at returned ptr");
+	e = *((uint32_t *)r_vector_index_ptr (&v, 0));
+	mu_assert_eq (e, 0xDEAD, "r_vector_push_front => content");
+	e = *((uint32_t *)r_vector_index_ptr (&v, 1));
+	mu_assert_eq (e, 1337, "r_vector_push_front => old content");
+
+	e = 0xBEEF;
+	e = *((uint32_t *)r_vector_push_front (&v, &e));
+	mu_assert_eq_fmt (v.len, 3UL, "r_vector_push_front => len == 3", "%lu");
+	mu_assert_eq (e, 0xBEEF, "r_vector_push_front (empty) => content at returned ptr");
+	e = *((uint32_t *)r_vector_index_ptr (&v, 0));
+	mu_assert_eq (e, 0xBEEF, "r_vector_push_front => content");
+	e = *((uint32_t *)r_vector_index_ptr (&v, 1));
+	mu_assert_eq (e, 0xDEAD, "r_vector_push_front => old content");
+	e = *((uint32_t *)r_vector_index_ptr (&v, 2));
+	mu_assert_eq (e, 1337, "r_vector_push_front => old content");
+
+	r_vector_clear (&v, NULL, NULL);
+
+
 	init_test_vector (&v, 5, 0);
+	e = 1337;
+	e = *((uint32_t *)r_vector_push_front (&v, &e));
+	mu_assert ("r_vector_push_front (resize) => capacity", v.capacity >= 6);
+	mu_assert_eq_fmt (v.len, 6UL, "r_vector_push_front (resize) => len", "%lu");
+	mu_assert_eq (e, 1337, "r_vector_push_front (empty) => content at returned ptr");
 
-	uint32_t e;
-	r_vector_delete_at (&v, 2, &e);
-	mu_assert_eq (e, 2, "r_vector_delete_at => into");
-	mu_assert_eq_fmt (v.len, 4UL, "r_vector_delete_at => len", "%lu");
-
-	mu_assert_eq (((uint32_t *)v.a)[0], 0, "r_vector_delete_at => remaining elements");
-	mu_assert_eq (((uint32_t *)v.a)[1], 1, "r_vector_delete_at => remaining elements");
-	mu_assert_eq (((uint32_t *)v.a)[2], 3, "r_vector_delete_at => remaining elements");
-	mu_assert_eq (((uint32_t *)v.a)[3], 4, "r_vector_delete_at => remaining elements");
-
-	r_vector_delete_at (&v, 3, &e);
-	mu_assert_eq (e, 4, "r_vector_delete_at (end) => into");
-	mu_assert_eq_fmt (v.len, 3UL, "r_vector_delete_at (end) => len", "%lu");
-
-	mu_assert_eq (((uint32_t *)v.a)[0], 0, "r_vector_delete_at (end) => remaining elements");
-	mu_assert_eq (((uint32_t *)v.a)[1], 1, "r_vector_delete_at (end) => remaining elements");
-	mu_assert_eq (((uint32_t *)v.a)[2], 3, "r_vector_delete_at (end) => remaining elements");
+	size_t i;
+	for (i = 1; i < v.len; i++) {
+		e = *((uint32_t *)r_vector_index_ptr (&v, i));
+		mu_assert_eq (e, (uint32_t)i - 1, "r_vector_push (resize) => old content");
+	}
+	e = *((uint32_t *)r_vector_index_ptr (&v, 0));
+	mu_assert_eq (e, 1337, "r_vector_push (resize) => content");
 
 	r_vector_clear (&v, NULL, NULL);
 
 	mu_end;
 }
 
+static bool test_vector_reserve() {
+	RVector v;
+	r_vector_init (&v, 4);
+
+	r_vector_reserve (&v, 42);
+	mu_assert_eq_fmt (v.capacity, 42UL, "r_vector_reserve (empty) => capacity", "%lu");
+	mu_assert ("r_vector_reserve (empty) => a", v.a);
+	size_t i;
+	for (i = 0; i < v.capacity; i++) {
+		*((uint32_t *)r_vector_index_ptr (&v, i)) = 1337;
+	}
+	v.len = 20;
+
+	r_vector_reserve (&v, 100);
+	mu_assert_eq_fmt (v.capacity, 100UL, "r_vector_reserve => capacity", "%lu");
+	mu_assert ("r_vector_reserve => a", v.a);
+	for (i = 0; i < v.capacity; i++) {
+		*((uint32_t *)r_vector_index_ptr (&v, i)) = 1337;
+	}
+
+	r_vector_clear (&v, NULL, NULL);
+
+	mu_end;
+}
+
+static bool test_vector_shrink() {
+	RVector v;
+	init_test_vector (&v, 5, 5);
+	void *a = r_vector_shrink (&v);
+	mu_assert_eq_fmt (a, v.a, "r_vector_shrink ret", "%p");
+	mu_assert_eq_fmt (v.len, 5UL, "r_vector_shrink => len", "%lu");
+	mu_assert_eq_fmt (v.capacity, 5UL, "r_vector_shrink => capacity", "%lu");
+	r_vector_clear (&v, NULL, NULL);
+
+	init_test_vector (&v, 5, 0);
+	a = r_vector_shrink (&v);
+	mu_assert_eq_fmt (a, v.a, "r_vector_shrink (already minimal) ret", "%p");
+	mu_assert_eq_fmt (v.len, 5UL, "r_vector_shrink (already minimal) => len", "%lu");
+	mu_assert_eq_fmt (v.capacity, 5UL, "r_vector_shrink (already minimal) => capacity", "%lu");
+
+	mu_end;
+}
+
 static int all_tests() {
-	mu_run_test (test_r_vector);
+	mu_run_test (test_r_vector_old);
 	mu_run_test (test_vector_init);
 	mu_run_test (test_vector_new);
-	mu_run_test (test_vector_push);
 	mu_run_test (test_vector_empty);
 	mu_run_test (test_vector_free);
+	mu_run_test (test_vector_clone);
+	mu_run_test (test_vector_clear);
 	mu_run_test (test_vector_delete_at);
+	mu_run_test (test_vector_insert);
+	mu_run_test (test_vector_insert_range);
+	mu_run_test (test_vector_pop);
+	mu_run_test (test_vector_pop_front);
+	mu_run_test (test_vector_push);
+	mu_run_test (test_vector_push_front);
+	mu_run_test (test_vector_reserve);
+	mu_run_test (test_vector_shrink);
 	return tests_passed != tests_run;
 }
 
