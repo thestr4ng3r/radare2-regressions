@@ -16,6 +16,22 @@ static void init_test_vector(RVector *v, size_t len, size_t padding) {
 	}
 }
 
+// allocates a pvector of len pointers to uint32_t values from 0 to len
+// with capacity len + padding
+static void init_test_pvector(RVector *v, size_t len, size_t padding) {
+	v->a = malloc ((len + padding) * sizeof (void *));
+	v->len = len;
+	v->capacity = len + padding;
+	v->elem_size = sizeof (void *);
+
+	uint32_t i;
+	for (i = 0; i < len; i++) {
+		uint32_t *e = malloc (sizeof (uint32_t));
+		*e = i;
+		((void **)v->a)[i] = e;
+	}
+}
+
 static bool test_r_vector_old() {
 	ptrdiff_t i;
 	void **it;
@@ -568,7 +584,53 @@ static bool test_vector_shrink() {
 	mu_assert_eq_fmt (a, v.a, "r_vector_shrink (already minimal) ret", "%p");
 	mu_assert_eq_fmt (v.len, 5UL, "r_vector_shrink (already minimal) => len", "%lu");
 	mu_assert_eq_fmt (v.capacity, 5UL, "r_vector_shrink (already minimal) => capacity", "%lu");
+	r_vector_clear (&v, NULL, NULL);
 
+	mu_end;
+}
+
+static bool test_pvector_init() {
+	RVector v;
+	r_pvector_init (&v);
+	mu_assert_eq_fmt (v.elem_size, sizeof (void *), "elem_size", "%lu");
+	mu_assert_eq_fmt (v.len, 0UL, "len", "%lu");
+	mu_assert_eq_fmt (v.a, NULL, "a", "%p");
+	mu_assert_eq_fmt (v.capacity, 0UL, "capacity", "%lu");
+	mu_end;
+}
+
+static bool test_pvector_new() {
+	RVector *v = r_pvector_new ();
+	mu_assert_eq_fmt (v->elem_size, sizeof (void *), "elem_size", "%lu");
+	mu_assert_eq_fmt (v->len, 0UL, "len", "%lu");
+	mu_assert_eq_fmt (v->a, NULL, "a", "%p");
+	mu_assert_eq_fmt (v->capacity, 0UL, "capacity", "%lu");
+	free (v);
+	mu_end;
+}
+
+static bool test_pvector_free() {
+	// run with asan or valgrind
+	RVector *v = R_NEW (RVector);
+	init_test_pvector (v, 5, 5);
+	mu_assert_eq_fmt (v->len, 5UL, "initial len", "%lu");
+	mu_assert ("initial a", v->a);
+	mu_assert_eq_fmt (v->capacity, 10UL, "initial capacity", "%lu");
+	r_pvector_free (v, free);
+	mu_end;
+}
+
+static bool test_pvector_clear() {
+	// run with asan or valgrind
+	RVector v;
+	init_test_pvector (&v, 5, 5);
+	mu_assert_eq_fmt (v.len, 5UL, "initial len", "%lu");
+	mu_assert ("initial a", v.a);
+	mu_assert_eq_fmt (v.capacity, 10UL, "initial capacity", "%lu");
+	r_pvector_clear (&v, free);
+	mu_assert_eq_fmt (v.len, 0UL, "len", "%lu");
+	mu_assert_eq_fmt (v.a, NULL, "a", "%p");
+	mu_assert_eq_fmt (v.capacity, 0UL, "capacity", "%lu");
 	mu_end;
 }
 
@@ -589,6 +651,12 @@ static int all_tests() {
 	mu_run_test (test_vector_push_front);
 	mu_run_test (test_vector_reserve);
 	mu_run_test (test_vector_shrink);
+
+	mu_run_test (test_pvector_init);
+	mu_run_test (test_pvector_new);
+	mu_run_test (test_pvector_free);
+	mu_run_test (test_pvector_clear);
+
 	return tests_passed != tests_run;
 }
 
