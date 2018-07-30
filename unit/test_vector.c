@@ -634,6 +634,57 @@ static bool test_pvector_clear() {
 	mu_end;
 }
 
+static bool test_pvector_at() {
+	RVector v;
+	init_test_pvector (&v, 5, 0);
+	uint32_t i;
+	for (i = 0; i < 5; i++) {
+		uint32_t e = *((uint32_t *)r_pvector_at (&v, i));
+		mu_assert_eq (e, i, "at");
+	}
+	r_pvector_clear (&v, free);
+	mu_end;
+}
+
+static bool test_pvector_set() {
+	RVector v;
+	init_test_pvector (&v, 5, 0);
+	free (((void **)v.a)[3]);
+	r_pvector_set (&v, 3, (void *)1337);
+	mu_assert_eq_fmt (((void **)v.a)[3], (void *)1337, "set", "%p");
+	r_pvector_set (&v, 3, NULL);
+	mu_assert_eq_fmt (((void **)v.a)[3], NULL, "set", "%p");
+	r_pvector_clear (&v, free);
+	mu_end;
+}
+
+static bool test_pvector_contains() {
+	RVector v;
+	init_test_pvector (&v, 5, 0);
+	void *e = ((void **)v.a)[3];
+	void **p = r_pvector_contains (&v, e);
+	mu_assert_eq_fmt (p, (void **)v.a + 3, "contains", "%p");
+	p = r_pvector_contains (&v, 0);
+	mu_assert_eq_fmt (p, NULL, "!contains", "%p");
+	r_pvector_clear (&v, free);
+	mu_end;
+}
+
+static bool test_pvector_delete_at() {
+	RVector v;
+	init_test_pvector (&v, 5, 0);
+	uint32_t *e = r_pvector_delete_at (&v, 3);
+	mu_assert_eq (*e, 3, "delete_at ret");
+	free (e);
+	mu_assert_eq_fmt (v.len, 4UL, "delete_at => len", "%lu");
+	mu_assert_eq (*((uint32_t **)v.a)[0], 0, "delete_at => remaining content");
+	mu_assert_eq (*((uint32_t **)v.a)[1], 1, "delete_at => remaining content");
+	mu_assert_eq (*((uint32_t **)v.a)[2], 2, "delete_at => remaining content");
+	mu_assert_eq (*((uint32_t **)v.a)[3], 4, "delete_at => remaining content");
+	r_pvector_clear (&v, free);
+	mu_end;
+}
+
 static int all_tests() {
 	mu_run_test (test_r_vector_old);
 	mu_run_test (test_vector_init);
@@ -656,6 +707,10 @@ static int all_tests() {
 	mu_run_test (test_pvector_new);
 	mu_run_test (test_pvector_free);
 	mu_run_test (test_pvector_clear);
+	mu_run_test (test_pvector_at);
+	mu_run_test (test_pvector_set);
+	mu_run_test (test_pvector_contains);
+	mu_run_test (test_pvector_delete_at);
 
 	return tests_passed != tests_run;
 }
