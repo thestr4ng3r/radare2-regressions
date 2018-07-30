@@ -874,6 +874,27 @@ static bool test_pvector_push_front() {
 	mu_end;
 }
 
+static bool test_pvector_sort() {
+	RPVector v;
+	r_pvector_init (&v, free);
+	r_pvector_push (&v, strdup ("Charmander"));
+	r_pvector_push (&v, strdup ("Squirtle"));
+	r_pvector_push (&v, strdup ("Bulbasaur"));
+	r_pvector_push (&v, strdup ("Meowth"));
+	r_pvector_push (&v, strdup ("Caterpie"));
+	r_pvector_sort (&v, (RPVectorComparator) strcmp);
+
+	mu_assert_eq_fmt (v.v.len, 5UL, "sort len", "%lu");
+	mu_assert_streq ((const char *)((void **)v.v.a)[0], "Bulbasaur", "sorted strings");
+	mu_assert_streq ((const char *)((void **)v.v.a)[1], "Caterpie", "sorted strings");
+	mu_assert_streq ((const char *)((void **)v.v.a)[2], "Charmander", "sorted strings");
+	mu_assert_streq ((const char *)((void **)v.v.a)[3], "Meowth", "sorted strings");
+	mu_assert_streq ((const char *)((void **)v.v.a)[4], "Squirtle", "sorted strings");
+	r_pvector_clear (&v);
+
+	mu_end;
+}
+
 static bool test_pvector_foreach() {
 	RPVector v;
 	init_test_pvector2 (&v, 5, 5);
@@ -962,6 +983,7 @@ static int all_tests() {
 	mu_run_test (test_pvector_pop_front);
 	mu_run_test (test_pvector_push);
 	mu_run_test (test_pvector_push_front);
+	mu_run_test (test_pvector_sort);
 	mu_run_test (test_pvector_foreach);
 	mu_run_test (test_pvector_upper_lower_bound);
 
