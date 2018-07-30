@@ -969,6 +969,63 @@ static bool test_pvector_push_front() {
 	mu_end;
 }
 
+static bool test_pvector_foreach() {
+	RPVector v;
+	init_test_pvector2 (&v, 5, 5);
+
+	int i = 1;
+	void **it;
+	int acc[5] = {0};
+	r_pvector_foreach (&v, it) {
+		void *e = *it;
+		int ev = (int)((size_t)e);
+		mu_assert_eq (acc[ev], 0, "unset acc element");
+		acc[ev] = i++;
+	}
+
+	for (i = 0; i < 5; i++) {
+		mu_assert_eq (acc[i], i + 1, "acc");
+	}
+
+	r_pvector_clear (&v);
+
+	mu_end;
+}
+
+static bool test_pvector_upper_lower_bound() {
+	void *a[] = {(void*)0, (void*)2, (void*)4, (void*)6, (void*)8};
+	RPVector s;
+	r_pvector_init (&s, NULL);
+	s.v.a = malloc (sizeof (void *) * 5);
+	s.v.capacity = 5;
+	memcpy (s.v.a, a, sizeof (void *) * 5);
+	s.v.len = 5;
+
+	size_t l;
+#define CMP(x, y) x - y
+	r_pvector_lower_bound (&s, (void *)4, l, CMP);
+	mu_assert_eq_fmt (r_pvector_at (&s, l), (void *)4, "lower_bound", "%p");
+	r_pvector_lower_bound (&s, (void *)5, l, CMP);
+	mu_assert_eq_fmt (r_pvector_at (&s, l), (void *)6, "lower_bound 2", "%p");
+	r_pvector_lower_bound (&s, (void *)6, l, CMP);
+	mu_assert_eq_fmt (r_pvector_at (&s, l), (void *)6, "lower_bound 3", "%p");
+	r_pvector_lower_bound (&s, (void *)9, l, CMP);
+	mu_assert_eq_fmt (l, s.v.len, "lower_bound 3", "%lu");
+
+	r_pvector_upper_bound (&s, (void *)4, l, CMP);
+	mu_assert_eq_fmt (r_pvector_at (&s, l), (void *)6, "upper_bound", "%p");
+	r_pvector_upper_bound (&s, (void *)5, l, CMP);
+
+	mu_assert_eq_fmt (r_pvector_at (&s, l), (void *)6, "upper_bound 2", "%p");
+	r_pvector_upper_bound (&s, (void *)6, l, CMP);
+	mu_assert_eq_fmt (r_pvector_at (&s, l), (void *)8, "upper_bound 3", "%p");
+#undef CMP
+
+	r_pvector_clear (&s);
+
+	mu_end;
+}
+
 static int all_tests() {
 	mu_run_test (test_r_vector_old);
 
@@ -1002,6 +1059,8 @@ static int all_tests() {
 	mu_run_test (test_pvector_pop_front);
 	mu_run_test (test_pvector_push);
 	mu_run_test (test_pvector_push_front);
+	mu_run_test (test_pvector_foreach);
+	mu_run_test (test_pvector_upper_lower_bound);
 
 	return tests_passed != tests_run;
 }
